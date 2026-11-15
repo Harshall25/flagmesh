@@ -1,0 +1,8 @@
+# Secrets: real values live only in .env files, which are never committed.
+# Commit .env.example (variable names with placeholder values) instead.
+.env
+*.env
+!.env.example
+
+# IDE settings (IntelliJ / GoLand)
+.idea/

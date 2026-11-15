@@ -60,37 +60,72 @@
 
 ---
 
-## 2. FlagMesh (`flagmesh_db`)
+## 2. FlagMesh (PostgreSQL, schema `flags`: local Docker now, Neon at deployment)
 
-![FlagMesh entity-relationship diagram, Redis message and sidecar memory](diagrams/06-db-flagmesh.png)
+![FlagMesh data model: tables, seed flags, Redis event, sidecar memory and the evaluate API](diagrams/06-db-flagmesh.png)
 
 ### Tables
 
 | Table | Purpose | Key constraints |
 |---|---|---|
-| `flags` | One row per feature switch. | `flag_key` unique. `CHECK (rollout_percent BETWEEN 0 AND 100)`. `version` increments on every change. |
-| `flag_rules` | Targeting rules (e.g. `country IN ['IN']`). | Evaluated in `priority` order. The first match wins. |
-| `flag_audit_log` | Append-only history of who changed what. | Rows are never updated or deleted. |
+| `flags.feature_flags` | One row per flag. It holds the on/off state, rollout percentage, allowlist (`allow_users`) and any runtime config JSON (`payload`). | `flag_key` is the PK. `CHECK (rollout_pct BETWEEN 0 AND 100)`. `version` increases by exactly 1 on every change. |
+| `flags.flag_audit_logs` | Immutable history: the exact before and after JSON of every change, with the `actor` who made it. | `flag_key` is an FK to `feature_flags`. Rows are only inserted, never updated or deleted. |
+
+Both tables, and the four seed flags below, are created by the Flyway migration `V1__init_flags.sql`.
+
+**One environment per database.** There is no `environment` column. Development and production each get their own database (local Docker now, Neon at deployment), so `flag_key` alone stays unique. A shared multi-environment table would need `(flag_key, environment)` as the primary key, an environment filter in every query, and an environment field in every event. That cost buys nothing while there is only one environment per database.
+
+### Seed flags
+
+| `flag_key` | Enabled | Rollout | `payload` | Used for |
+|---|---|---|---|---|
+| `observability.log-level` | on | 100% | `{"defaultLevel": "INFO", "debugLevel": "DEBUG", "targetUserId": "user_42"}` | Switches the sidecar and the Spring services between INFO and DEBUG logging, live |
+| `payment.rate-limit` | on | 100% | `{"requestsPerMinute": 30, "burst": 5}` | Tunes PayCore's Redis token-bucket rate limit |
+| `payment.kill-switch` | off | 0% | `{"retryAfterSeconds": 60, "reason": "Scheduled maintenance"}` | Stops payments during maintenance |
+| `payment.fraud-v2` | on | 25% | `{"riskScoreThreshold": 0.75, "timeoutMs": 150}` | Rolls out the new fraud check to 25% of users |
 
 ### How a flag is evaluated (in the sidecar)
 
-| Step | Logic |
-|---|---|
-| 1 | `enabled = false`: the flag is **off** for everyone. |
-| 2 | A matching rule exists: use the rule's result. |
-| 3 | Otherwise, compute `hash(flagKey + userId) % 100`. If it is less than `rollout_percent`, the flag is **on**. The same user always gets the same answer. |
+| Step | Condition | Result | `reason` |
+|---|---|---|---|
+| 1 | Flag missing, or `enabled = false` | Off, `payload: null` | `REASON_DISABLED` |
+| 2 | `userId` is in `allow_users` | On, with the payload | `REASON_TARGETED` |
+| 3 | `murmur3.Sum32(flagKey + ":" + userId) % 100 < rollout_pct` | On, with the payload | `REASON_PERCENTAGE_ROLLOUT` |
+| 4 | Otherwise (user is outside the rollout) | Off, `payload: null` | `REASON_DEFAULT` |
+
+The hash is deterministic, so the same user always gets the same answer. Raising `rollout_pct` from 20 to 50 keeps every user who was already on.
+
+### Evaluate API (sidecar)
+
+`POST http://localhost:9090/v1/evaluate`
+
+| Request field | Type | Notes |
+|---|---|---|
+| `flagKey` | string | e.g. `payment.rate-limit` |
+| `userId` | string | Used for the allowlist and for bucketing |
+
+| Response field | Type | Notes |
+|---|---|---|
+| `flagKey` | string | Echoed back |
+| `enabled` | boolean | The final decision |
+| `reason` | string | `REASON_DISABLED`, `REASON_TARGETED`, `REASON_PERCENTAGE_ROLLOUT` or `REASON_DEFAULT`. The names follow OpenFeature's standard reasons (`DISABLED`, `TARGETING_MATCH`, `SPLIT`, `DEFAULT`). |
+| `version` | int64 | The flag version that produced the answer |
+| `payload` | JSON object | The runtime config, e.g. `{"requestsPerMinute": 30, "burst": 5}` |
+
+The sidecar also exposes `GET /health`.
 
 ### Shared contract (Java ↔ Go)
 
-The Redis message and the snapshot JSON share one schema. It lives in the `flagmesh` repo and is used by both `control-plane` and `sidecar`, so the two cannot drift apart.
+The Redis event (`FlagUpdateEvent` on channel `flags:updates`) and the snapshot from `GET /api/internal/flags/snapshot` carry the same flag fields. Java defines them as records in `control-plane/.../model/`, and Go as structs in `sidecar/models.go`. Both live in the `flagmesh` repo, so they cannot drift apart unnoticed.
 
 | Field | Type | Notes |
 |---|---|---|
-| `flagKey` | string | Unique, kebab-case |
+| `flagKey` | string | Primary key, dotted name (`payment.rate-limit`) |
 | `enabled` | boolean | Master switch |
-| `rolloutPercent` | int 0–100 | Percentage rollout |
-| `rules` | array | Optional targeting rules |
-| `version` | int64 | Monotonic. The sidecar ignores any message whose version is not newer than the one it holds. |
+| `rolloutPct` | int 0–100 | Percentage rollout |
+| `allowUsers` | string array | Always-on user IDs |
+| `payload` | JSON object | Runtime config returned to the caller |
+| `version` | int64 | Monotonic. The sidecar ignores any event whose version is not newer than the one it holds. |
 
 ---
 

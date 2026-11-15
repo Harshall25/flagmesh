@@ -7,7 +7,7 @@
 
 ## In one paragraph
 
-This project is made of two products that work together. **PayCore** is a payment engine: it moves money between accounts and makes sure that money is never lost, created out of thin air, or charged twice. **FlagMesh** is a switchboard for features: it lets a person turn a feature on or off in a running app without changing or restarting that app. PayCore uses FlagMesh to decide which of its features are switched on.
+This project is made of two products that work together. **PayCore** is a payment engine: it moves money between accounts and makes sure that money is never lost, created out of thin air, or charged twice. **FlagMesh** is a switchboard for features and settings. It lets a person turn a feature on or off, or change a live setting such as a rate limit or how detailed the logs are. The running app is not changed or restarted. PayCore uses FlagMesh to decide which of its features are on and which settings to use.
 
 ---
 
@@ -16,7 +16,7 @@ This project is made of two products that work together. **PayCore** is a paymen
 | Product | What it does | Everyday comparison |
 |---|---|---|
 | **PayCore** | Takes a payment request, checks it, records it in an account book, and tells other systems it happened. | A careful bank clerk. They write every transfer in a ledger and never process the same cheque twice. |
-| **FlagMesh** | Stores on/off switches for features and delivers any change to every running app within about a second. | The light switches in a building. You flip a switch and the light changes. Nobody rewires anything. |
+| **FlagMesh** | Stores on/off switches and live settings, and delivers any change to every running app within about a second. It keeps a record of who changed what. | The light switches and dimmers in a building. You flip or turn one and the light changes. Nobody rewires anything. |
 
 ---
 
@@ -29,7 +29,8 @@ This project is made of two products that work together. **PayCore** is a paymen
 1. A **customer** asks PayCore to make a payment.
 2. The **Payment Service** checks the request. It writes the payment into the **Ledger**, the account book.
 3. It then posts a notice on the **Message board**, so other systems (for example, a notification service) learn that a payment happened.
-4. Separately, a person can flip a switch on the **Admin screen**. The **Switch keeper**, which sits right next to PayCore, learns about the change. When PayCore asks "is this feature on?", the keeper answers instantly.
+4. Separately, a person can flip a switch or edit a setting on the **Admin screen**. The **Switch keeper**, which sits right next to PayCore, learns about the change. When PayCore asks "is this feature on?", the keeper answers instantly.
+5. The keeper also saves a backup copy on disk. If the rest of FlagMesh is unreachable, it still answers from that copy.
 
 ---
 
@@ -61,6 +62,10 @@ Why this matters: a team can release a new feature to 5% of users, watch it, and
 | **Idempotency** | Doing the same thing twice has the same effect as doing it once. | Pressing a lift button five times still calls one lift. |
 | **Transaction** | A group of steps that all succeed together, or all fail together. | A bank transfer is never half done. |
 | **Feature flag** | An on/off switch for a feature inside an app. | A light switch for one feature. |
+| **Percentage rollout** | A feature is turned on for only part of the users, such as 25%. The same person always gets the same answer. | Opening a new checkout counter for one in four customers. |
+| **Live setting (dynamic config)** | A value the app reads while running, such as "30 payments per minute". It can be changed without a restart. | A thermostat you can turn while the heating is on. |
+| **Kill switch** | One switch that stops a feature immediately, for example during maintenance. | The emergency stop button on a machine. |
+| **Log level** | How much detail an app writes about what it is doing. More detail helps find problems. | Switching a dashcam from "events only" to "record everything". |
 | **Sidecar** | A small helper program that runs right next to an app and answers its questions locally. | A personal assistant sitting at your desk, instead of a call centre in another city. |
 | **Cache** | A fast, nearby copy of information. | Keeping your notes on your desk instead of in the archive room. |
 | **Message board (Kafka)** | A shared board where systems post events, and other systems read them at their own pace. | A notice board in an office. |
@@ -85,7 +90,7 @@ Why this matters: a team can release a new feature to 5% of users, watch it, and
 | Repository | Contains |
 |---|---|
 | `paycore` | `payment-service/` (the payment engine) and `deploy/` (files that start everything together) |
-| `flagmesh` | `control-plane/` (stores switches), `sidecar/` (switch keeper) and `admin-ui/` (admin screen) |
+| `flagmesh` | `control-plane/` (stores switches), `sidecar/` (switch keeper), `admin-ui/` (admin screen) and `deploy/` (files that start FlagMesh together) |
 | `workmesh` | A separate existing project. It is not part of this work, but it could use FlagMesh later. |
 
 ---

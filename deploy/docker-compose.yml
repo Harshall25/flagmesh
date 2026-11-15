@@ -1,0 +1,51 @@
+# FlagMesh local development stack: PostgreSQL + Redis.
+#
+#   Start:  docker compose up -d        (run inside this deploy/ folder)
+#   Status: docker compose ps           (both services should say "healthy")
+#   Stop:   docker compose down         (containers removed, data kept in volumes)
+#   Reset:  docker compose down -v      (also deletes the volumes = fresh database)
+#
+# ${VARIABLES} are read from deploy/.env (ignored by Git; see deploy/.env.example).
+# COMPOSE_PROJECT_NAME=flagmesh in .env keeps this stack separate from PayCore's,
+# because both repos keep their compose file in a folder named "deploy".
+#
+# Host ports differ from PayCore's so both stacks can run at the same time:
+#   FlagMesh: PostgreSQL 5433, Redis 6380   |   PayCore: PostgreSQL 5432, Redis 6379
+#
+# control-plane, sidecar and admin-ui are added here in Phase 4.2.
+
+services:
+
+  postgres:
+    image: postgres:17                 # pinned major version; matches Testcontainers and Neon later
+    restart: unless-stopped            # restart after crashes or Docker restarts, unless you stopped it
+    ports:
+      - "5433:5432"                    # host:container. Apps connect to localhost:5433
+    environment:                       # the postgres image creates this database and user on first start
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # named volume: data survives "docker compose down"
+    healthcheck:                       # "healthy" only once PostgreSQL accepts connections
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6380:6379"                    # FlagMesh's Redis is on host port 6380
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]   # healthy when Redis answers PONG
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:                               # named volumes, managed by Docker
+  pgdata:
+  redisdata:
