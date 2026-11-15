@@ -9,6 +9,9 @@ spring:
   flyway:
     schemas: flags          # Flyway creates schema "flags" if it is missing
     default-schema: flags   # and keeps its history table (flyway_schema_history) there
+  mvc:
+    problemdetails:
+      enabled: true         # errors (404, 409, 400) return an RFC 9457 ProblemDetail JSON body
 
 server:
   port: 8081                # default only; SERVER_PORT overrides it
