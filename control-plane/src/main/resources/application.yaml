@@ -1,3 +1,14 @@
+# control-plane configuration. Holds NO secrets.
+# Database, Redis and port come from environment variables (deploy/.env):
+#   SPRING_DATASOURCE_URL / _USERNAME / _PASSWORD  -> spring.datasource.*
+#   SPRING_DATA_REDIS_URL                          -> spring.data.redis.url
+#   SERVER_PORT                                    -> server.port
 spring:
   application:
     name: control-plane
+  flyway:
+    schemas: flags          # Flyway creates schema "flags" if it is missing
+    default-schema: flags   # and keeps its history table (flyway_schema_history) there
+
+server:
+  port: 8081                # default only; SERVER_PORT overrides it
